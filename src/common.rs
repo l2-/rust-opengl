@@ -19,3 +19,15 @@ impl Math<int2, int> for int2 {
         return x1 * y2 - y1 * x2;
     }
 }
+
+pub fn read_lines(file_path:&str) -> Vec<String> {
+    let res = std::fs::read_to_string(file_path);
+    return match res {
+        Ok(_str) => _str.lines().map(|l| String::from(l)).collect::<Vec<_>>(),
+        Err(_) => panic!("No file found for {}", file_path),
+    }
+}
+
+pub fn flatten_lines(lines: &Vec<String>) -> String {
+    return lines.iter().fold(String::from(""), |s, l| s + l + "\n");
+}

@@ -1,16 +1,7 @@
-const VERT_SHADER: &str = r#"#version 330 core
-  layout (location = 0) in vec3 pos;
-  void main() {
-    gl_Position = vec4(pos.x, pos.y, pos.z, 1.0);
-  }
-"#;
+use crate::common::*;
 
-const FRAG_SHADER: &str = r#"#version 330 core
-  out vec4 frag;
-  void main() {
-    frag = vec4(1.0, 0.5, 0.2, 1.0);
-  }
-"#;
+const VERT_SHADER_PATH: &str = "src/shaders/vert.vs";
+const FRAG_SHADER_PATH: &str = "src/shaders/frag.fs";
 
 #[derive(Debug)]
 pub struct Shader {
@@ -71,6 +62,8 @@ impl Shader {
     }
 
     pub fn _create() -> Shader {
-        return Shader::create(VERT_SHADER,  FRAG_SHADER);
+		let vertex_shader = flatten_lines(&read_lines(VERT_SHADER_PATH));
+		let fragment_shader = flatten_lines(&read_lines(FRAG_SHADER_PATH));
+        return Shader::create(&vertex_shader,  &fragment_shader);
     }
 }
