@@ -104,6 +104,9 @@ fn main() {
     let data: Vec<f32> = (0..10).map(|i| i as f32).collect();
     kernel.execute_test_kernel(&ctx.cl_context.as_ref().unwrap(), &ctx.cl_queue.as_ref().unwrap(), data);
 
+    // use opencl3::memory::Image::create(context, flags, image_format, image_desc, host_ptr) to create image texture you can write to
+    // see create_from_gl_texture()
+    // https://docs.rs/opencl3/0.9.2/opencl3/memory/struct.Image.html
     log::info!("{:?}", ctx);
     // Loop until the user closes the window
     while !ctx.window.as_ref().unwrap().should_close() {
