@@ -67,7 +67,7 @@ fn init_cl(window: &mut Window) -> ocl::Result<(ocl::Context, ocl::Queue)> {
 
     let mut properties = ocl::builders::ContextProperties::new();
     properties.set_wgl_hdc(window.get_wgl_context() as *mut _);
-    properties.set_gl_context(unsafe {glfw::ffi::glfwGetWGLContext(window.window_ptr())} as *mut _);
+    properties.set_gl_context(window.get_wgl_context() as *mut _);
     let context = ocl::Context::builder()
         .properties(properties)
         .devices(device.clone())
