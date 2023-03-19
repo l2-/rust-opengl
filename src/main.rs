@@ -4,29 +4,31 @@ extern crate ocl;
 extern crate ocl_interop;
 extern crate pretty_env_logger;
 
-mod surface;
 mod common;
 mod logging;
 mod mesh;
+mod surface;
 mod cl {
     pub mod device;
     pub mod kernel;
 }
 mod shader;
 
-use std::any;
-
-use common::*;
-use glfw::{ffi::glfwWindowHint, Action, Context as GLFWContext, Key, Window};
-use mesh::*;
-use shader::*;
 use cl::device::*;
+use common::*;
+use glfw::{
+    ffi::{glfwDestroyWindow, glfwTerminate, glfwWindowHint},
+    Action, Context as GLFWContext, Key, Window,
+};
+use mesh::*;
+use ocl::{*, prm::Char8};
+use shader::*;
 
 const WINDOW_TITLE: &str = "Simple Ray Tracer";
 const VERTICES: [Vertex; 3] = [(-0.5, -0.5, 0.0), (0.5, -0.5, 0.0), (0.0, 0.5, 0.0)];
 const CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.8, 1.0];
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 600;
+const WIDTH: usize = 800;
+const HEIGHT: usize = 600;
 const CL_GL_CONTEXT_KHR: isize = 0x2008;
 const CL_WGL_HDC_KHR: isize = 0x200B;
 const CL_CONTEXT_PLATFORM: isize = 0x1084;
@@ -73,11 +75,15 @@ fn init_cl(window: &mut Window) -> ocl::Result<(ocl::Context, ocl::Queue)> {
         .devices(device.clone())
         .platform(ocl::Platform::default())
         .build()?;
-    
-    let queue = ocl::Queue::new(&context, device, None)?;
+
+    let queue = ocl::Queue::new(
+        &context,
+        device,
+        Some(CommandQueueProperties::PROFILING_ENABLE),
+    )?;
 
     return ocl::Result::Ok((context, queue));
-    
+
     // switch opencl3 to ocl https://github.com/Nopey/rust-ocl-interop
     // let platform = device.platform().unwrap();
     // let _1 = ctx.window.as_ref().unwrap().get_wgl_context();
@@ -86,7 +92,7 @@ fn init_cl(window: &mut Window) -> ocl::Result<(ocl::Context, ocl::Queue)> {
     // let window_ctx = unsafe { glfw::ffi::glfwGetWGLContext(ctx.window.as_ref().unwrap().window_ptr()) };
     // let properties = [
     //     CL_GL_CONTEXT_KHR, window_ctx as isize,
-    //     // CL_WGL_HDC_KHR, 
+    //     // CL_WGL_HDC_KHR,
     //     CL_CONTEXT_PLATFORM, platform as isize, 0];
     // cl_context_properties props[] =
     // {
@@ -104,7 +110,7 @@ fn init_cl(window: &mut Window) -> ocl::Result<(ocl::Context, ocl::Queue)> {
     //     Ok(properties) => log::debug!("Properties {:?}", properties),
     //     Err(err) => log::debug!("Error retrieving properties {:?}", String::from(err)),
     // }
-    
+
     // let queue = opencl3::command_queue::CommandQueue::create_default_with_properties(&ctx.cl_context.as_ref().unwrap(), opencl3::command_queue::CL_QUEUE_PROFILING_ENABLE, 0).expect("CommandQueue::create_default failed");
     // ctx.cl_queue.replace(queue);
 }
@@ -123,7 +129,12 @@ fn main() {
 
     // Create a windowed mode window and its OpenGL context
     let (mut window, events) = glfw
-        .create_window(WIDTH, HEIGHT, WINDOW_TITLE, glfw::WindowMode::Windowed)
+        .create_window(
+            WIDTH as u32,
+            HEIGHT as u32,
+            WINDOW_TITLE,
+            glfw::WindowMode::Windowed,
+        )
         .expect("Failed to create GLFW window.");
 
     // Make the window's context current
@@ -142,12 +153,24 @@ fn main() {
     // let data: Vec<f32> = (0..10).map(|i| i as f32).collect();
     // kernel.execute_test_kernel(&ctx.cl_context.as_ref().unwrap(), &ctx.cl_queue.as_ref().unwrap(), data);
 
-    // let img = surface::create_surface(&ctx.cl_context.as_ref().unwrap(), WIDTH, HEIGHT);
+    let img = surface::create_surface(&cl_queue, WIDTH, HEIGHT).unwrap();
+
+    let mut kernel = cl::kernel::Kernel::create_test_kernel(&cl_queue, &img);
+
+    kernel.execute_test_kernel(&img, &(WIDTH as i32), &(HEIGHT as i32));
     // log::info!("Image info {:?}", img);
     // use opencl3::memory::Image::create(context, flags, image_format, image_desc, host_ptr) to create image texture you can write to
     // see create_from_gl_texture()
     // https://docs.rs/opencl3/0.9.2/opencl3/memory/struct.Image.html
-    log::info!("{:?} {:?} {:?} {:?} {:?}", shader_program, meshes, window, cl_context, cl_queue);
+    log::info!(
+        "{:?} {:?} {:?} {:?} {:?} {:?}",
+        shader_program,
+        meshes,
+        window,
+        cl_context,
+        cl_queue,
+        img
+    );
     // Loop until the user closes the window
     while !window.should_close() {
         // Swap front and back buffers
@@ -172,6 +195,11 @@ fn main() {
                 gl::DrawArrays(gl::TRIANGLES, 0, m.vertex_count);
             });
         }
+    }
+    window.close();
+    cl_queue.finish().unwrap();
+    unsafe {
+        glfwTerminate();
     }
     log::info!("Finished");
 }

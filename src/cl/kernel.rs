@@ -1,54 +1,65 @@
-// use crate::common::{read_lines, flatten_lines};
-// use opencl3::command_queue::{CommandQueue};
-// use opencl3::context::Context;
-// use opencl3::kernel::{ExecuteKernel, Kernel as clKernel};
-// use opencl3::memory::{Buffer, CL_MEM_READ_ONLY, CL_MEM_WRITE_ONLY};
-// use opencl3::program::Program;
-// use opencl3::types::{cl_float, CL_BLOCKING};
-// use std::ptr;
+use crate::common::{flatten_lines, read_lines};
+use ocl::Kernel as clKernel;
+use ocl::*;
 
-// const TEST_KERNEL_PATH: &str = "src/cl/main.cl";
-// const TEST_KERNEL_NAME: &str = "square";
+const TEST_KERNEL_PATH: &str = "src/cl/main.cl";
+const TEST_KERNEL_NAME: &str = "main";
 
-// pub struct Kernel {
-//     kernel_ref: clKernel
-// }
+pub struct Kernel {
+    kernel_ref: clKernel,
+}
 
-// impl Kernel {
-//     pub fn create(ctx: &Context, source_file_path: &str, kernel_name: &str) -> Self {
-//         // handle #includes?
-//         let src = flatten_lines(&read_lines(source_file_path));
-//         let program = Program::create_and_build_from_source(ctx, &src, "")
-//             .expect("Program::create_and_build_from_source failed");
-//         let kernel = clKernel::create(&program, kernel_name).expect("Kernel::create failed");
-//         return Kernel{ kernel_ref: kernel };
-//     }
-//     pub fn create_test_kernel(ctx: &Context) -> Self {
-//         return Kernel::create(ctx, TEST_KERNEL_PATH, TEST_KERNEL_NAME);
-//     }
-//     pub fn execute_test_kernel(&self, ctx: &Context, queue: &CommandQueue, in_1: Vec<f32>) -> () {
-//         let mut in_buffer = unsafe {
-//             Buffer::<cl_float>::create(&ctx, CL_MEM_READ_ONLY, in_1.len(), ptr::null_mut()).unwrap()
-//         };
-//         let out_buffer = unsafe {
-//             Buffer::<cl_float>::create(&ctx, CL_MEM_WRITE_ONLY, in_1.len(), ptr::null_mut()).unwrap()
-//         };
-//         unsafe { queue.enqueue_write_buffer(&mut in_buffer, CL_BLOCKING, 0, &in_1, &[]).unwrap() };
-//         let kernel_event = unsafe { 
-//             ExecuteKernel::new(&self.kernel_ref)
-//                 .set_arg(&in_buffer)
-//                 .set_arg(&out_buffer)
-//                 .set_arg(&(in_1.len() as u32))
-//                 .set_global_work_size(in_1.len())
-//                 .enqueue_nd_range(&queue).unwrap()
-//         };
-//         let mut results: Vec<f32> = vec![0.0f32; in_1.len()];
-//         unsafe { queue.enqueue_read_buffer(&out_buffer, CL_BLOCKING, 0, &mut results, &[]).unwrap() };
-//         log::info!("Result {:?}", results);
+impl Kernel {
 
-//         let start_time = kernel_event.profiling_command_start().unwrap();
-//         let end_time = kernel_event.profiling_command_end().unwrap();
-//         let duration = end_time - start_time;
-//         log::debug!("kernel execution duration (ns): {}", duration);
-//     }
-// }
+    // Somehow still cannot share opengl image between opengl and opencl. when acquiring and releasing it goes wrong. buffer should work though?? or at least the ocl test works
+
+    pub fn execute_test_kernel(&mut self, buf: &Image<i32>, width: &i32, height: &i32) -> () {
+        // let mut acquire_globj_event: ocl::Event = ocl::Event::empty();
+        // buf.cmd().gl_acquire().enew(&mut acquire_globj_event).enq().unwrap();
+        let mut kernel_run_event: ocl::Event = ocl::Event::empty();
+        // self.kernel_ref.set_arg(1, width).unwrap();
+        // self.kernel_ref.set_arg(2, height).unwrap();
+        match unsafe { self.kernel_ref.cmd()
+            .enew(&mut kernel_run_event)
+            // .ewait(acquire_globj_event)
+            .enq() 
+        }
+        {
+            Ok(res) => res,
+            Err(err) => { log::error!("{}", err); return; }
+        };
+        //buf.cmd().gl_release().ewait(&kernel_run_event).enq().unwrap();
+
+        buf.default_queue().unwrap().finish().unwrap();
+        
+        let start_time = kernel_run_event.profiling_info(enums::ProfilingInfo::Start).unwrap().time().unwrap();
+        let end_time = kernel_run_event.profiling_info(enums::ProfilingInfo::End).unwrap().time().unwrap();
+        let duration = end_time - start_time;
+        log::debug!("kernel execution duration (ns): {}", duration);
+    }
+    pub fn create_test_kernel(queue: &Queue, source_buf: &Image<i32>) -> Self {
+        return Kernel::create(queue, TEST_KERNEL_PATH, TEST_KERNEL_NAME, source_buf);
+    }
+    pub fn create(queue: &Queue, source_file_path: &str, kernel_name: &str, source_buf: &Image<i32>) -> Self {
+        // handle #includes?
+        let src = flatten_lines(&read_lines(source_file_path));
+        let [width, height, _] = source_buf.dims().to_lens().unwrap();
+        let program = ocl::Program::builder()
+            .src(&src)
+            .devices(queue.device())
+            .build(&queue.context())
+            .unwrap();
+        let mut kernel = ocl::Kernel::builder()
+            .queue(queue.to_owned())
+            .name(kernel_name)
+            // .arg(source_buf)
+            // .arg(&(width as i32))
+            // .arg(&(height as i32))
+            .program(&program)
+            .build()
+            .unwrap();
+        kernel.set_default_global_work_size(source_buf.dims().to_owned());
+
+        return Kernel { kernel_ref: kernel };
+    }
+}
